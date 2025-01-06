@@ -580,13 +580,119 @@
             display: block;
         }
 
-        .total-row {
-            background-color: #f8f9fa;
-            font-weight: 500;
+        .package-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 15px;
+            background: #fff;
+            border-radius: 4px;
+            min-width: 200px;
+            border: 1px solid #e0e0e0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
 
-        .total-row td {
-            border-top: 2px solid #275284;
+        .package-display {
+            flex: 1;
+            color: #333;
+            min-height: 20px;
+            max-height: none;
+            padding: 4px 0;
+            overflow: visible;
+        }
+
+        .package-display::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .package-display::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        .package-display::-webkit-scrollbar-thumb {
+            background: #275284;
+            border-radius: 3px;
+        }
+
+        .package-info label {
+            color: #666;
+            font-weight: 500;
+            white-space: nowrap;
+            min-width: 80px;
+        }
+
+        .package-result {
+            display: inline-block;
+            margin: 0 8px 8px 0;
+            padding: 6px 12px;
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+            font-size: 0.9em;
+            white-space: nowrap;
+        }
+
+        .high-match {
+            border-left-color: #28a745;
+            background: #f8fff8;
+        }
+
+        .medium-match {
+            border-left-color: #ffc107;
+            background: #fffff8;
+        }
+
+        .low-match {
+            border-left-color: #dc3545;
+            background: #fff8f8;
+        }
+
+        .product-name {
+            display: inline;
+            font-weight: 500;
+            color: #275284;
+        }
+
+        .package-value {
+            display: inline;
+            color: #666;
+            margin-left: 4px;
+        }
+
+        .package-value::before {
+            content: "•";
+            margin: 0 4px;
+            color: #999;
+        }
+
+        .match-score {
+            color: #999;
+            font-size: 0.8em;
+        }
+
+        .no-results, .too-many-results {
+            padding: 10px;
+            text-align: center;
+            color: #666;
+        }
+
+        .no-results small, .too-many-results small {
+            color: #999;
+            display: block;
+            margin-top: 4px;
+        }
+
+        .no-results {
+            color: #666;
+            font-style: italic;
+            padding: 4px 0;
+        }
+
+        .no-results small {
+            color: #999;
+            display: block;
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -624,6 +730,10 @@
                     <i class="fas fa-search"></i>
                     Tìm kiếm
                 </button>
+            </div>
+            <div class="package-info">
+                <label>Quy cách:</label>
+                <div id="packageSize" class="package-display">-</div>
             </div>
             <div class="filter-container">
                 <label for="warehouseFilter">Kho:</label>
@@ -694,6 +804,8 @@
             <p>Được phát triển bởi <a href="">Trần Văn Tiến Anh</a> và Claude (AI)</p>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2"></script>
 
     <script>
         let globalData = [];
@@ -769,21 +881,27 @@
 
         function parseCSV(csv) {
             const lines = csv.split(/\r?\n/);
-            const headers = lines[0].split(',');
+            const headers = lines[0].split(',').map(header => 
+                header.replace(/^"|"$/g, '').trim()
+            );
+            
             const results = [];
-
             for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue; // Bỏ qua dòng trống
+                
                 let currentLine = lines[i].split(',');
-                if (currentLine && currentLine.length === headers.length) {
+                if (currentLine.length === headers.length) {
                     const row = {};
                     for (let j = 0; j < headers.length; j++) {
-                        let header = headers[j].replace(/^"|"$/g, '').trim();
                         let value = currentLine[j] ? currentLine[j].replace(/^"|"$/g, '').trim() : '';
-                        row[header] = value;
+                        row[headers[j]] = value;
                     }
                     results.push(row);
                 }
             }
+            
+            // Log để debug
+            console.log('Parsed CSV:', results);
             return results;
         }
 
@@ -889,7 +1007,6 @@
                 return (a['Số lô'] || '').localeCompare(b['Số lô'] || '');
             });
 
-            // Hiển thị dữ liệu
             sortedData.forEach(item => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -904,38 +1021,6 @@
                 `;
                 tbody.appendChild(row);
             });
-
-            // Tính tổng với cách xử lý số liệu chính xác hơn
-            const totals = sortedData.reduce((acc, item) => {
-                // Chuyển đổi giá trị sang số bằng cách loại bỏ dấu chấm phân cách phần nghìn
-                const ton = parseInt(String(item['Tồn']).replace(/\./g, '')) || 0;
-                const thung = parseInt(String(item['Thùng']).replace(/\./g, '')) || 0;
-                const le = parseInt(String(item['Lẻ']).replace(/\./g, '')) || 0;
-
-                // Cộng dồn vào tổng
-                acc.ton = (acc.ton || 0) + ton;
-                acc.thung = (acc.thung || 0) + thung;
-                acc.le = (acc.le || 0) + le;
-
-                return acc;
-            }, { ton: 0, thung: 0, le: 0 });
-
-            // Format số với dấu chấm cho phần nghìn
-            const formatNumber = (num) => {
-                return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-            };
-
-            // Thêm dòng tổng
-            const totalRow = document.createElement('tr');
-            totalRow.className = 'total-row';
-            totalRow.innerHTML = `
-                <td colspan="4"><strong>Tổng cộng (${data.length} kết quả)</strong></td>
-                <td><strong>${formatNumber(totals.ton)}</strong></td>
-                <td><strong>${formatNumber(totals.thung)}</strong></td>
-                <td><strong>${formatNumber(totals.le)}</strong></td>
-                <td></td>
-            `;
-            tbody.appendChild(totalRow);
         }
 
         function validateData(data) {
@@ -946,7 +1031,70 @@
             return true;
         }
 
+        // Thêm các hằng số cho localStorage
+        const STOCK_CACHE_KEY = 'stockDataCache';
+        const STOCK_CACHE_TIMESTAMP = 'stockCacheTimestamp';
+
+        // Hàm load dữ liệu từ sheet Stock dưới dạng JSON
+        async function loadStockData() {
+            try {
+                // Kiểm tra cache trong localStorage
+                const cachedData = localStorage.getItem(STOCK_CACHE_KEY);
+                const cacheTimestamp = localStorage.getItem(STOCK_CACHE_TIMESTAMP);
+                
+                // Nếu có cache và chưa quá 1 phiên làm việc
+                if (cachedData && cacheTimestamp && 
+                    (Date.now() - Number(cacheTimestamp)) < (24 * 60 * 60 * 1000)) {
+                    return JSON.parse(cachedData);
+                }
+
+                // Nếu không có cache hoặc cache đã hết hạn, load lại từ API
+                const response = await fetch('https://docs.google.com/spreadsheets/d/1qc7mO1c3sYCux1eLkoKuJ_0ldfAE1OnxvIHWKiXc-1w/gviz/tq?tqx=out:json&sheet=Stock&range=A:B');
+                if (!response.ok) {
+                    throw new Error('Không thể tải dữ liệu Stock');
+                }
+
+                const text = await response.text();
+                // Extract JSON từ response
+                const jsonText = text.match(/google\.visualization\.Query\.setResponse\((.*)\)/)[1];
+                const data = JSON.parse(jsonText);
+
+                // Chuyển đổi dữ liệu từ format của Google Sheets
+                const stockData = data.table.rows
+                    .filter(row => row.c && row.c[0] && row.c[1] && row.c[0].v && row.c[1].v) // Kiểm tra null
+                    .map(row => ({
+                        name: String(row.c[0].v).trim(), // Biệt dược
+                        package: String(row.c[1].v).trim() // Quy cách
+                    }))
+                    .filter(item => item.name && item.package); // Chỉ lấy item có đủ thông tin
+
+                console.log('Raw data:', data.table.rows[0]); // Debug
+                console.log('Processed stock data:', stockData); // Debug
+
+                // Lưu vào localStorage
+                localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify(stockData));
+                localStorage.setItem(STOCK_CACHE_TIMESTAMP, Date.now().toString());
+
+                return stockData;
+            } catch (error) {
+                console.error('Lỗi khi tải dữ liệu Stock:', error);
+                console.error('Error details:', error.message); // Debug
+                showNotification('Không thể tải dữ liệu quy cách. Vui lòng thử lại sau.', 'error');
+                return [];
+            }
+        }
+
+        // Thêm hàm clear cache khi refresh
+        function clearStockCache() {
+            localStorage.removeItem(STOCK_CACHE_KEY);
+            localStorage.removeItem(STOCK_CACHE_TIMESTAMP);
+        }
+
+        // Sửa lại hàm window.onload
         window.onload = async function() {
+            // Clear cache cũ
+            clearStockCache();
+            // Load dữ liệu mới
             await refreshData();
         };
 
@@ -962,11 +1110,10 @@
             // 2. Event listener cho phím Enter trong ô tìm kiếm
             const searchInput = document.getElementById('searchInput');
             searchInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                    e.preventDefault();
-                searchProducts();
-            }
-        });
+                if (e.key === 'Enter') {
+                    searchProducts();
+                }
+            });
 
             // 3. Event listener cho click outside
             document.addEventListener('click', function(event) {
@@ -1165,43 +1312,38 @@
             }
         }
 
-        function searchProducts() {
-            const searchTerm = document.getElementById('searchInput').value.trim().toLowerCase();
-            const previousSearchTerm = this.previousSearchTerm || '';
-            
-            // Reset filters khi có search term mới hoặc khi xóa search term
-            if (searchTerm !== previousSearchTerm) {
-                selectedWarehouses.clear();
-                selectedLocations.clear();
+        async function searchProducts() {
+            showLoading(true);
+            try {
+                const searchInput = document.getElementById('searchInput');
+                const searchTerm = sanitizeInput(searchInput.value);
                 
-                // Reset các checkbox
-                document.querySelectorAll('#warehouseOptions input[type="checkbox"], #locationOptions input[type="checkbox"]')
-                    .forEach(cb => cb.checked = false);
+                if (!searchTerm) {
+                    document.getElementById('packageSize').textContent = '-';
+                    displayResults(globalData); // Hiển thị tất cả nếu không có search term
+                    return;
+                }
+
+                // Load dữ liệu warehouse
+                const warehouseData = await loadCSVData();
                 
-                // Reset hiển thị
-                updateSelectedOptionsDisplay();
-                updateSelectedLocationsDisplay();
-            }
-            
-            // Lưu search term hiện tại để so sánh cho lần sau
-            this.previousSearchTerm = searchTerm;
-            
-            // Lọc dữ liệu theo search term trước
-            const searchFilteredData = globalData.filter(item => 
-                !searchTerm || (item['Mã hàng'] && item['Mã hàng'].toLowerCase().includes(searchTerm))
-            );
+                // Tìm kiếm trong warehouse
+                const searchResults = warehouseData.filter(item => 
+                    item['Mã hàng'].toLowerCase().includes(searchTerm)
+                );
 
-            // Cập nhật danh sách kho và vị trí dựa trên kết quả tìm kiếm
-            if (searchTerm) {
-                updateWarehouseOptions(searchFilteredData);
-                updateLocationFilter(searchFilteredData);
-            } else {
-                updateWarehouseFilter(globalData);
-                updateLocationFilter(globalData);
-            }
+                // Hiển thị kết quả warehouse
+                displayResults(searchResults);
 
-            // Hiển thị kết quả tìm kiếm
-            displayResults(searchFilteredData);
+                // Tìm quy cách
+                await debouncedSearch(searchTerm);
+
+            } catch (error) {
+                console.error('Lỗi khi tìm kiếm:', error);
+                showNotification('Đã có lỗi xảy ra', 'error');
+            } finally {
+                showLoading(false);
+            }
         }
 
         // Thêm hàm mới để cập nhật danh sách kho
@@ -1254,6 +1396,119 @@
             document.getElementById('warehouseList').classList.remove('show');
             document.getElementById('locationFilter').classList.remove('show');
         }
+
+        // Thêm biến global để lưu cache
+        let globalStockData = null;
+        let searchTimeout = null;
+        let isSearching = false;
+
+        // Hàm chuẩn hóa input
+        function sanitizeInput(input) {
+            return input
+                .trim() // Xóa khoảng trắng đầu cuối
+                .replace(/[\t\n\r]+/g, ' ') // Xóa tab, newline
+                .replace(/\s+/g, ' ') // Chuẩn hóa khoảng trắng
+                .toLowerCase(); // Chuyển về lowercase
+        }
+
+        // Hàm tìm quy cách từ stockData
+        function findPackageSizes(searchTerm, stockData) {
+            if (!stockData || !stockData.length) return [];
+            
+            // Chuẩn hóa searchTerm
+            searchTerm = searchTerm.toLowerCase().trim();
+            console.log('Searching for:', searchTerm);
+
+            // Tìm kiếm trực tiếp
+            const matches = stockData.filter(item => {
+                const itemName = item.name.toLowerCase().trim();
+                return itemName.includes(searchTerm);
+            });
+
+            // Loại bỏ trùng lặp bằng cách lấy kết quả cuối cùng cho mỗi tên sản phẩm
+            const uniqueMatches = matches.reduce((acc, current) => {
+                // Sử dụng tên sản phẩm làm key
+                acc[current.name] = current;
+                return acc;
+            }, {});
+
+            // Chuyển đổi object thành array và trả về
+            const results = Object.values(uniqueMatches);
+            
+            console.log('Unique matches:', results);
+            return results;
+        }
+
+        // Hàm hiển thị quy cách
+        function displayPackageInfo(packageInfos) {
+            const packageDisplay = document.getElementById('packageSize');
+            
+            if (!packageInfos || packageInfos.length === 0) {
+                packageDisplay.innerHTML = `
+                    <div class="no-results">
+                        Không tìm thấy thông tin quy cách
+                        <small>Vui lòng kiểm tra lại từ khóa</small>
+                    </div>`;
+                return;
+            }
+
+            // Hiển thị kết quả dạng pills
+            const html = packageInfos.map(info => `
+                <div class="package-result">
+                    <span class="product-name">${info.name}</span>
+                    <span class="package-value">${info.package || 'Chưa có thông tin'}</span>
+                </div>
+            `).join('');
+
+            packageDisplay.innerHTML = html;
+        }
+
+        // Hàm debounce để tránh gọi API quá nhiều
+        function debounce(func, wait) {
+            return function (...args) {
+                if (searchTimeout) {
+                    clearTimeout(searchTimeout);
+                }
+                return new Promise((resolve) => {
+                    searchTimeout = setTimeout(() => {
+                        resolve(func.apply(this, args));
+                    }, wait);
+                });
+            };
+        }
+
+        // Hàm tìm kiếm với debounce
+        const debouncedSearch = debounce(async (searchTerm) => {
+            if (isSearching) return;
+            
+            try {
+                isSearching = true;
+                showLoading(true);
+
+                // Load dữ liệu Stock nếu chưa có
+                const stockData = await loadStockData();
+                
+                // Tìm quy cách
+                const packageInfos = findPackageSizes(searchTerm, stockData);
+                
+                // Hiển thị kết quả
+                displayPackageInfo(packageInfos);
+
+            } catch (error) {
+                console.error('Lỗi khi tìm kiếm:', error);
+                document.getElementById('packageSize').textContent = 'Đã có lỗi xảy ra';
+            } finally {
+                isSearching = false;
+                showLoading(false);
+            }
+        }, 300);
+
+        // Giữ lại xử lý paste nhưng không tự search
+        document.getElementById('searchInput').addEventListener('paste', function(e) {
+            e.preventDefault();
+            const text = sanitizeInput(e.clipboardData.getData('text'));
+            this.value = text;
+        });
     </script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 </body>
